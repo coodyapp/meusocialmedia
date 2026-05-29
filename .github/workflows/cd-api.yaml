@@ -30,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       environment:  ${{ steps.resolve.outputs.environment }}
-      worker_name:  ${{ steps.resolve.outputs.worker_name }}
+      wrangler_env: ${{ steps.resolve.outputs.wrangler_env }}
       d1_database:  ${{ steps.resolve.outputs.d1_database }}
     steps:
       - id: resolve
@@ -44,10 +44,10 @@ jobs:
           fi
           echo "environment=$ENV" >> $GITHUB_OUTPUT
           if [[ "$ENV" == "prd" ]]; then
-            echo "worker_name=meusocialmedia-api"     >> $GITHUB_OUTPUT
+            echo "wrangler_env="                      >> $GITHUB_OUTPUT
             echo "d1_database=meusocialmedia-db"      >> $GITHUB_OUTPUT
           else
-            echo "worker_name=meusocialmedia-api-stg" >> $GITHUB_OUTPUT
+            echo "wrangler_env=--env=stg"             >> $GITHUB_OUTPUT
             echo "d1_database=meusocialmedia-db-stg"  >> $GITHUB_OUTPUT
           fi
 
@@ -86,7 +86,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy --name=${{ needs.config.outputs.worker_name }}
+          command: deploy ${{ needs.config.outputs.wrangler_env }}
           workingDirectory: apps/api
           secrets: |
             JWT_SECRET

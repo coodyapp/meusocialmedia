@@ -9,7 +9,7 @@ ENVIRONMENT = "production"
 [[d1_databases]]
 binding = "DB"
 database_name = "meusocialmedia-db"
-database_id = "placeholder-will-be-set-by-ci"
+database_id = "5e6eb240-3e5c-4631-b2a4-3f94146ec04a"
 
 [[r2_buckets]]
 binding = "STORAGE"
@@ -18,3 +18,18 @@ bucket_name = "meusocialmedia-storage"
 [dev]
 port = 8787
 local_protocol = "http"
+
+[env.stg]
+name = "meusocialmedia-api-stg"
+
+[env.stg.vars]
+ENVIRONMENT = "staging"
+
+[[env.stg.d1_databases]]
+binding = "DB"
+database_name = "meusocialmedia-db-stg"
+database_id = "3395a9fb-24dd-4064-bb90-c65b44846db6"
+
+[[env.stg.r2_buckets]]
+binding = "STORAGE"
+bucket_name = "meusocialmedia-storage-stg"
