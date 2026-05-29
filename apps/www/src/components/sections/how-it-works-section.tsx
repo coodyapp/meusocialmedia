@@ -20,7 +20,7 @@ const STEPS_DATA = [
     description: "Mantenha sua rede ativa, mesmo com agenda.",
     image: "/images/step-3.png",
   },
-] as const;
+];
 
 export function HowItWorksSection() {
   const [hoveredCard, setHoveredCard] = useState<number | null>(null);

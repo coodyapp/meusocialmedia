@@ -4,14 +4,14 @@ on:
   push:
     branches: [main, develop]
     paths:
-      - "apps/web/**"
+      - "apps/app/**"
       - "packages/**"
       - "pnpm-workspace.yaml"
       - "tsconfig.base.json"
   pull_request:
     branches: [main, develop]
     paths:
-      - "apps/web/**"
+      - "apps/app/**"
       - "packages/**"
       - "pnpm-workspace.yaml"
       - "tsconfig.base.json"
@@ -48,25 +48,25 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: .nx/cache
-          key: nx-web-${{ runner.os }}-${{ hashFiles('apps/web/**', 'packages/**') }}
+          key: nx-web-${{ runner.os }}-${{ hashFiles('apps/app/**', 'packages/**') }}
           restore-keys: nx-web-${{ runner.os }}-
 
       - name: Typecheck
-        run: pnpm --filter web typecheck
+        run: pnpm --filter app typecheck
 
       - name: Lint
-        run: pnpm --filter web lint
+        run: pnpm --filter app lint
 
       - name: Test
-        run: pnpm --filter web test
+        run: pnpm --filter app test
 
       - name: Build
         env:
           VITE_API_URL: https://api.meusocialmedia.com.br
-        run: pnpm build:web
+        run: pnpm build:app
 
       - uses: actions/upload-artifact@v4
         with:
           name: build-web
-          path: apps/web/dist
+          path: apps/app/dist
           retention-days: 1

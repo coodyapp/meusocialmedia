@@ -1,4 +1,4 @@
-import { Zap, Star, Crown, Icon } from "lucide-react";
+import { Zap, Star, Crown, type LucideIcon } from "lucide-react";
 
 export interface PricingPlan {
   id: "standard" | "premium" | "enterprise";
@@ -6,7 +6,7 @@ export interface PricingPlan {
   description: string;
   price: string;
   priceSubtext?: string;
-  icon: typeof Icon;
+  icon: LucideIcon;
   iconGradient: string;
   titleGradient: string;
   priceGradient?: string;

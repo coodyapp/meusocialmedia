@@ -38,7 +38,7 @@ interface ChatSession {
 
 export default function ChatPage() {
   const navigate = useNavigate();
-
+  const [messages, setMessages] = useState<Message[]>([
     {
       id: "1",
       content: "Olá! Sou seu assistente de IA para redes sociais. Como posso ajudá-lo hoje?",
