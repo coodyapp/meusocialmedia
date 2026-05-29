@@ -1,0 +1,2 @@
+# Run Vite+ staged checks (lint, format, type-check)
+vp staged

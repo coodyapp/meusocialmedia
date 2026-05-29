@@ -1,0 +1,103 @@
+name: CD — web
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'prd'
+        type: choice
+        options: [stg, prd]
+  push:
+    branches: [main, develop]
+    paths:
+      - "apps/web/**"
+      - "packages/ui/**"
+      - "packages/types/**"
+
+concurrency:
+  group: cd-web-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "24.14.1"
+  PNPM_VERSION: "10.33.0"
+
+jobs:
+  config:
+    name: Resolve environment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.resolve.outputs.environment }}
+      api_url:     ${{ steps.resolve.outputs.api_url }}
+      cf_project:  ${{ steps.resolve.outputs.cf_project }}
+    steps:
+      - id: resolve
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            ENV="${{ github.event.inputs.environment }}"
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            ENV="prd"
+          else
+            ENV="stg"
+          fi
+          echo "environment=$ENV" >> $GITHUB_OUTPUT
+          if [[ "$ENV" == "prd" ]]; then
+            echo "api_url=https://api.meusocialmedia.com.br"  >> $GITHUB_OUTPUT
+            echo "cf_project=meusocialmedia-web"               >> $GITHUB_OUTPUT
+          else
+            echo "api_url=https://api-stg.meusocialmedia.com.br" >> $GITHUB_OUTPUT
+            echo "cf_project=meusocialmedia-web-stg"              >> $GITHUB_OUTPUT
+          fi
+
+  build:
+    name: Build (${{ needs.config.outputs.environment }})
+    needs: config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+      - run: pnpm install --frozen-lockfile
+      - name: Build
+        env:
+          VITE_API_URL: ${{ needs.config.outputs.api_url }}
+        run: pnpm build:web
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-web-${{ needs.config.outputs.environment }}
+          path: apps/web/dist
+          retention-days: 1
+
+  deploy:
+    name: Deploy → ${{ needs.config.outputs.environment }}
+    needs: [config, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    environment:
+      name: ${{ needs.config.outputs.environment }}
+      url: ${{ needs.config.outputs.environment == 'prd' && 'https://app.meusocialmedia.com.br' || 'https://app-stg.meusocialmedia.com.br' }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: build-web-${{ needs.config.outputs.environment }}
+          path: dist
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >
+            pages deploy dist
+            --project-name=${{ needs.config.outputs.cf_project }}
+            --branch=${{ github.ref_name }}
+            --commit-dirty=true
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}

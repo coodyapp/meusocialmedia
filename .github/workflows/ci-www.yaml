@@ -1,0 +1,72 @@
+name: CI — www
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "apps/www/**"
+      - "packages/**"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.base.json"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "apps/www/**"
+      - "packages/**"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.base.json"
+
+concurrency:
+  group: ci-www-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "24.14.1"
+  PNPM_VERSION: "10.33.0"
+
+jobs:
+  ci:
+    name: Typecheck · Lint · Test · Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v2
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - uses: actions/cache@v4
+        with:
+          path: .nx/cache
+          key: nx-www-${{ runner.os }}-${{ hashFiles('apps/www/**', 'packages/**') }}
+          restore-keys: nx-www-${{ runner.os }}-
+
+      - name: Typecheck
+        run: pnpm --filter www typecheck
+
+      - name: Lint
+        run: pnpm --filter www lint
+
+      - name: Test
+        run: pnpm --filter www test
+
+      - name: Build
+        env:
+          VITE_API_URL: https://api.meusocialmedia.com.br
+        run: pnpm build:www
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-www
+          path: apps/www/dist
+          retention-days: 1

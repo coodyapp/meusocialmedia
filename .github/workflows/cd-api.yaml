@@ -1,0 +1,96 @@
+name: CD — api
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'prd'
+        type: choice
+        options: [stg, prd]
+  push:
+    branches: [main, develop]
+    paths:
+      - "apps/api/**"
+      - "packages/types/**"
+      - "packages/utils/**"
+
+concurrency:
+  group: cd-api-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "24.14.1"
+  PNPM_VERSION: "10.33.0"
+
+jobs:
+  config:
+    name: Resolve environment
+    runs-on: ubuntu-latest
+    outputs:
+      environment:  ${{ steps.resolve.outputs.environment }}
+      worker_name:  ${{ steps.resolve.outputs.worker_name }}
+      d1_database:  ${{ steps.resolve.outputs.d1_database }}
+    steps:
+      - id: resolve
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            ENV="${{ github.event.inputs.environment }}"
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            ENV="prd"
+          else
+            ENV="stg"
+          fi
+          echo "environment=$ENV" >> $GITHUB_OUTPUT
+          if [[ "$ENV" == "prd" ]]; then
+            echo "worker_name=meusocialmedia-api"     >> $GITHUB_OUTPUT
+            echo "d1_database=meusocialmedia-db"      >> $GITHUB_OUTPUT
+          else
+            echo "worker_name=meusocialmedia-api-stg" >> $GITHUB_OUTPUT
+            echo "d1_database=meusocialmedia-db-stg"  >> $GITHUB_OUTPUT
+          fi
+
+  deploy:
+    name: Migrate + Deploy → ${{ needs.config.outputs.environment }}
+    needs: config
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    environment:
+      name: ${{ needs.config.outputs.environment }}
+      url: ${{ needs.config.outputs.environment == 'prd' && 'https://api.meusocialmedia.com.br' || 'https://api-stg.meusocialmedia.com.br' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+      - run: pnpm install --frozen-lockfile
+
+      - name: Run D1 migrations
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: d1 migrations apply ${{ needs.config.outputs.d1_database }} --remote
+          workingDirectory: apps/api
+
+      - name: Deploy Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy --name=${{ needs.config.outputs.worker_name }}
+          workingDirectory: apps/api
+          secrets: |
+            JWT_SECRET
+            STRIPE_SECRET_KEY
+        env:
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}

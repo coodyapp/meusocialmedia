@@ -1,4 +1,4 @@
-name = "meusocialmedia-app"
+name = "meusocialmedia-web"
 pages_build_output_dir = "dist"
 compatibility_date = "2025-05-01"
 compatibility_flags = ["nodejs_compat"]
