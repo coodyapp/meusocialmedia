@@ -1,0 +1,16 @@
+{
+  "name": "app",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/app/src",
+  "projectType": "application",
+  "tags": ["scope:app", "type:app"],
+  "targets": {
+    "deploy": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "wrangler pages deploy dist --project-name=meusocialmedia-app",
+        "cwd": "apps/app"
+      }
+    }
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "name": "meusocialmedia",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "nx run-many --target=build --all",
+    "build:www": "nx build www",
+    "build:app": "nx build app",
+    "build:api": "nx build api",
+    "dev": "nx run-many --target=dev --all --parallel=3",
+    "dev:www": "nx dev www",
+    "dev:app": "nx dev app",
+    "dev:api": "nx dev api",
+    "test": "nx run-many --target=test --all",
+    "test:watch": "nx run-many --target=test --all -- --watch",
+    "lint": "nx run-many --target=lint --all",
+    "typecheck": "nx run-many --target=typecheck --all",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,css,md}\" --ignore-path .gitignore",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,css,md}\" --ignore-path .gitignore",
+    "deploy:www": "nx deploy www",
+    "deploy:app": "nx deploy app",
+    "deploy:api": "nx deploy api",
+    "affected:build": "nx affected --target=build",
+    "affected:test": "nx affected --target=test",
+    "affected:lint": "nx affected --target=lint",
+    "graph": "nx graph"
+  },
+  "devDependencies": {
+    "@nx/js": "^21.0.0",
+    "@nx/vite": "^21.0.0",
+    "@nx/eslint": "^21.0.0",
+    "@nx/workspace": "^21.0.0",
+    "nx": "^21.0.0",
+    "prettier": "^3.5.3",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=24.14.1",
+    "pnpm": ">=10.33.0"
+  },
+  "packageManager": "pnpm@10.33.0"
+}

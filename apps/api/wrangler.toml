@@ -1,0 +1,20 @@
+name = "meusocialmedia-api"
+main = "src/index.ts"
+compatibility_date = "2025-05-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+ENVIRONMENT = "production"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "meusocialmedia-db"
+database_id = "placeholder-will-be-set-by-ci"
+
+[[r2_buckets]]
+binding = "STORAGE"
+bucket_name = "meusocialmedia-storage"
+
+[dev]
+port = 8787
+local_protocol = "http"

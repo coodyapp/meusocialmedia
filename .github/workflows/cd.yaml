@@ -1,0 +1,199 @@
+name: CD
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: 'App to deploy (www, app, api, or all)'
+        required: true
+        default: 'all'
+        type: choice
+        options: [all, www, app, api]
+  push:
+    branches: [main]
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "24.14.1"
+  PNPM_VERSION: "10.33.0"
+
+jobs:
+  # ── Build www ────────────────────────────────────────────────────────────────
+  build-www:
+    name: Build www
+    if: |
+      github.ref == 'refs/heads/main' &&
+      (github.event.inputs.app == 'all' || github.event.inputs.app == 'www' || github.event_name == 'push')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+      - run: pnpm install --frozen-lockfile
+      - name: Build www
+        env:
+          VITE_API_URL: https://api.meusocialmedia.com.br
+        run: pnpm build:www
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-www
+          path: apps/www/dist
+          retention-days: 1
+
+  # ── Build app ────────────────────────────────────────────────────────────────
+  build-app:
+    name: Build app
+    if: |
+      github.ref == 'refs/heads/main' &&
+      (github.event.inputs.app == 'all' || github.event.inputs.app == 'app' || github.event_name == 'push')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+      - run: pnpm install --frozen-lockfile
+      - name: Build app
+        env:
+          VITE_API_URL: https://api.meusocialmedia.com.br
+        run: pnpm build:app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-app
+          path: apps/app/dist
+          retention-days: 1
+
+  # ── Build api ────────────────────────────────────────────────────────────────
+  build-api:
+    name: Build api
+    if: |
+      github.ref == 'refs/heads/main' &&
+      (github.event.inputs.app == 'all' || github.event.inputs.app == 'api' || github.event_name == 'push')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+      - run: pnpm install --frozen-lockfile
+      - name: Build api
+        run: pnpm build:api
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-api
+          path: apps/api/dist
+          retention-days: 1
+
+  # ── Deploy www → Cloudflare Pages ────────────────────────────────────────────
+  deploy-www:
+    name: Deploy www → CF Pages
+    needs: build-www
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    environment:
+      name: production-www
+      url: https://www.meusocialmedia.com.br
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: build-www
+          path: dist
+      - name: Deploy www to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=meusocialmedia-www --branch=main --commit-dirty=true
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Deploy app → Cloudflare Pages ────────────────────────────────────────────
+  deploy-app:
+    name: Deploy app → CF Pages
+    needs: build-app
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    environment:
+      name: production-app
+      url: https://app.meusocialmedia.com.br
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: build-app
+          path: dist
+      - name: Deploy app to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=meusocialmedia-app --branch=main --commit-dirty=true
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Deploy api → Cloudflare Workers ──────────────────────────────────────────
+  deploy-api:
+    name: Deploy api → CF Workers
+    needs: build-api
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    environment:
+      name: production-api
+      url: https://api.meusocialmedia.com.br
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+      - run: pnpm install --frozen-lockfile
+        working-directory: .
+      - name: Run D1 migrations
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: d1 migrations apply meusocialmedia-db --remote
+          workingDirectory: apps/api
+      - name: Deploy Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy
+          workingDirectory: apps/api
+          secrets: |
+            JWT_SECRET
+            STRIPE_SECRET_KEY
+        env:
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
