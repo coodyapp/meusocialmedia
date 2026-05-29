@@ -3,14 +3,20 @@ name: CD
 on:
   workflow_dispatch:
     inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'prd'
+        type: choice
+        options: [stg, prd]
       app:
-        description: 'App to deploy (www, app, api, or all)'
+        description: 'App to deploy'
         required: true
         default: 'all'
         type: choice
         options: [all, www, app, api]
   push:
-    branches: [main]
+    branches: [main, develop]
 
 concurrency:
   group: cd-${{ github.ref }}
@@ -21,12 +27,60 @@ env:
   PNPM_VERSION: "10.33.0"
 
 jobs:
+  # ── Resolve environment config from branch or manual input ───────────────────
+  config:
+    name: Resolve environment
+    runs-on: ubuntu-latest
+    outputs:
+      environment:  ${{ steps.resolve.outputs.environment }}
+      api_url:      ${{ steps.resolve.outputs.api_url }}
+      www_project:  ${{ steps.resolve.outputs.www_project }}
+      app_project:  ${{ steps.resolve.outputs.app_project }}
+      api_worker:   ${{ steps.resolve.outputs.api_worker }}
+      d1_database:  ${{ steps.resolve.outputs.d1_database }}
+      deploy_www:   ${{ steps.resolve.outputs.deploy_www }}
+      deploy_app:   ${{ steps.resolve.outputs.deploy_app }}
+      deploy_api:   ${{ steps.resolve.outputs.deploy_api }}
+    steps:
+      - id: resolve
+        run: |
+          # Determine env: dispatch input takes precedence, then branch
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            ENV="${{ github.event.inputs.environment }}"
+            APP="${{ github.event.inputs.app }}"
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            ENV="prd"
+            APP="all"
+          else
+            ENV="stg"
+            APP="all"
+          fi
+
+          if [[ "$ENV" == "prd" ]]; then
+            echo "environment=prd"          >> $GITHUB_OUTPUT
+            echo "api_url=https://api.meusocialmedia.com.br"         >> $GITHUB_OUTPUT
+            echo "www_project=meusocialmedia-www"                     >> $GITHUB_OUTPUT
+            echo "app_project=meusocialmedia-app"                     >> $GITHUB_OUTPUT
+            echo "api_worker=meusocialmedia-api"                      >> $GITHUB_OUTPUT
+            echo "d1_database=meusocialmedia-db"                      >> $GITHUB_OUTPUT
+          else
+            echo "environment=stg"          >> $GITHUB_OUTPUT
+            echo "api_url=https://api-stg.meusocialmedia.com.br"      >> $GITHUB_OUTPUT
+            echo "www_project=meusocialmedia-www-stg"                  >> $GITHUB_OUTPUT
+            echo "app_project=meusocialmedia-app-stg"                  >> $GITHUB_OUTPUT
+            echo "api_worker=meusocialmedia-api-stg"                   >> $GITHUB_OUTPUT
+            echo "d1_database=meusocialmedia-db-stg"                   >> $GITHUB_OUTPUT
+          fi
+
+          echo "deploy_www=$([[ $APP == all || $APP == www ]] && echo true || echo false)" >> $GITHUB_OUTPUT
+          echo "deploy_app=$([[ $APP == all || $APP == app ]] && echo true || echo false)" >> $GITHUB_OUTPUT
+          echo "deploy_api=$([[ $APP == all || $APP == api ]] && echo true || echo false)" >> $GITHUB_OUTPUT
+
   # ── Build www ────────────────────────────────────────────────────────────────
   build-www:
-    name: Build www
-    if: |
-      github.ref == 'refs/heads/main' &&
-      (github.event.inputs.app == 'all' || github.event.inputs.app == 'www' || github.event_name == 'push')
+    name: Build www (${{ needs.config.outputs.environment }})
+    needs: config
+    if: needs.config.outputs.deploy_www == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,20 +95,19 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build www
         env:
-          VITE_API_URL: https://api.meusocialmedia.com.br
+          VITE_API_URL: ${{ needs.config.outputs.api_url }}
         run: pnpm build:www
       - uses: actions/upload-artifact@v4
         with:
-          name: build-www
+          name: build-www-${{ needs.config.outputs.environment }}
           path: apps/www/dist
           retention-days: 1
 
   # ── Build app ────────────────────────────────────────────────────────────────
   build-app:
-    name: Build app
-    if: |
-      github.ref == 'refs/heads/main' &&
-      (github.event.inputs.app == 'all' || github.event.inputs.app == 'app' || github.event_name == 'push')
+    name: Build app (${{ needs.config.outputs.environment }})
+    needs: config
+    if: needs.config.outputs.deploy_app == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -69,20 +122,19 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build app
         env:
-          VITE_API_URL: https://api.meusocialmedia.com.br
+          VITE_API_URL: ${{ needs.config.outputs.api_url }}
         run: pnpm build:app
       - uses: actions/upload-artifact@v4
         with:
-          name: build-app
+          name: build-app-${{ needs.config.outputs.environment }}
           path: apps/app/dist
           retention-days: 1
 
   # ── Build api ────────────────────────────────────────────────────────────────
   build-api:
-    name: Build api
-    if: |
-      github.ref == 'refs/heads/main' &&
-      (github.event.inputs.app == 'all' || github.event.inputs.app == 'api' || github.event_name == 'push')
+    name: Build api (${{ needs.config.outputs.environment }})
+    needs: config
+    if: needs.config.outputs.deploy_api == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -95,76 +147,81 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
       - run: pnpm install --frozen-lockfile
-      - name: Build api
+      - name: Build api (dry-run)
         run: pnpm build:api
       - uses: actions/upload-artifact@v4
         with:
-          name: build-api
+          name: build-api-${{ needs.config.outputs.environment }}
           path: apps/api/dist
           retention-days: 1
 
   # ── Deploy www → Cloudflare Pages ────────────────────────────────────────────
   deploy-www:
-    name: Deploy www → CF Pages
-    needs: build-www
+    name: Deploy www → ${{ needs.config.outputs.environment }}
+    needs: [config, build-www]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       deployments: write
     environment:
-      name: production-www
-      url: https://www.meusocialmedia.com.br
+      name: ${{ needs.config.outputs.environment }}
+      url: ${{ needs.config.outputs.environment == 'prd' && 'https://www.meusocialmedia.com.br' || 'https://www-stg.meusocialmedia.com.br' }}
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: build-www
+          name: build-www-${{ needs.config.outputs.environment }}
           path: dist
-      - name: Deploy www to Cloudflare Pages
+      - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name=meusocialmedia-www --branch=main --commit-dirty=true
+          command: >
+            pages deploy dist
+            --project-name=${{ needs.config.outputs.www_project }}
+            --branch=${{ github.ref_name }}
+            --commit-dirty=true
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
 
   # ── Deploy app → Cloudflare Pages ────────────────────────────────────────────
   deploy-app:
-    name: Deploy app → CF Pages
-    needs: build-app
+    name: Deploy app → ${{ needs.config.outputs.environment }}
+    needs: [config, build-app]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       deployments: write
     environment:
-      name: production-app
-      url: https://app.meusocialmedia.com.br
+      name: ${{ needs.config.outputs.environment }}
+      url: ${{ needs.config.outputs.environment == 'prd' && 'https://app.meusocialmedia.com.br' || 'https://app-stg.meusocialmedia.com.br' }}
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: build-app
+          name: build-app-${{ needs.config.outputs.environment }}
           path: dist
-      - name: Deploy app to Cloudflare Pages
+      - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name=meusocialmedia-app --branch=main --commit-dirty=true
+          command: >
+            pages deploy dist
+            --project-name=${{ needs.config.outputs.app_project }}
+            --branch=${{ github.ref_name }}
+            --commit-dirty=true
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
 
   # ── Deploy api → Cloudflare Workers ──────────────────────────────────────────
   deploy-api:
-    name: Deploy api → CF Workers
-    needs: build-api
+    name: Deploy api → ${{ needs.config.outputs.environment }}
+    needs: [config, build-api]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       deployments: write
     environment:
-      name: production-api
-      url: https://api.meusocialmedia.com.br
-    defaults:
-      run:
-        working-directory: apps/api
+      name: ${{ needs.config.outputs.environment }}
+      url: ${{ needs.config.outputs.environment == 'prd' && 'https://api.meusocialmedia.com.br' || 'https://api-stg.meusocialmedia.com.br' }}
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
@@ -176,20 +233,19 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
       - run: pnpm install --frozen-lockfile
-        working-directory: .
       - name: Run D1 migrations
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: d1 migrations apply meusocialmedia-db --remote
+          command: d1 migrations apply ${{ needs.config.outputs.d1_database }} --remote
           workingDirectory: apps/api
-      - name: Deploy Workers
+      - name: Deploy Worker
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy
+          command: deploy --name=${{ needs.config.outputs.api_worker }}
           workingDirectory: apps/api
           secrets: |
             JWT_SECRET
