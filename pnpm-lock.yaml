@@ -70,7 +70,7 @@ importers:
         specifier: ^4.15.2
         version: 4.95.0(@cloudflare/workers-types@4.20260529.1)
 
-  apps/web:
+  apps/app:
     dependencies:
       '@meusocialmedia/types':
         specifier: workspace:*
